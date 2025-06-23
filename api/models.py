@@ -9,12 +9,12 @@ from django.contrib.auth.models import AbstractUser
 class User(AbstractUser):
     USER_TYPE_CHOICES = (
       ("TUTOR", "Tutor"),
-      ("MANAGER", "Manager"),
+      ("PROPRIETARIO", "Proprietário"), # <-- MUDANÇA AQUI
     )
     # Campos que o User padrão não tem:
     phone_number = models.CharField(max_length=20, blank=True, null=True)
     birth_date = models.DateField(blank=True, null=True)
-    user_type = models.CharField(max_length=10, choices=USER_TYPE_CHOICES, default="TUTOR")
+    user_type = models.CharField(max_length=15, choices=USER_TYPE_CHOICES, default="TUTOR") # Aumentei o max_length para segurança
 
     def __str__(self):
         return self.username
@@ -23,7 +23,7 @@ class User(AbstractUser):
 # Tabela 2: PetShops
 #
 class PetShop(models.Model):
-    manager = models.OneToOneField(User, on_delete=models.CASCADE, related_name='petshop')
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='petshops')
     name = models.CharField(max_length=150)
     address = models.TextField(blank=True, null=True)
     latitude = models.DecimalField(max_digits=9, decimal_places=6, blank=True, null=True)
