@@ -66,7 +66,7 @@ class Service(models.Model):
     pet_shop = models.ForeignKey(PetShop, on_delete=models.CASCADE, related_name='services')
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True, null=True)
-    price = models.DecimalField(max_digits=10, decimal_places=2)
+    base_price = models.DecimalField(max_digits=10, decimal_places=2)
     duration_minutes = models.IntegerField(blank=True, null=True)
     is_active = models.BooleanField(default=True)
 
@@ -83,10 +83,12 @@ class Appointment(models.Model):
         ("CANCELLED", "Cancelado"),
         ("COMPLETED", "Concluído"),
     )
-    tutor = models.ForeignKey(User, on_delete=models.CASCADE, related_name='tutor_appointments')
+    tutor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='tutor_appointments')
     pet = models.ForeignKey(Pet, on_delete=models.CASCADE, related_name='appointments')
     pet_shop = models.ForeignKey(PetShop, on_delete=models.CASCADE, related_name='appointments')
     service = models.ForeignKey(Service, on_delete=models.SET_NULL, null=True)
+    client_name = models.CharField(max_length=150, blank=True, null=True)
+    client_phone = models.CharField(max_length=20, blank=True, null=True)
     appointment_time = models.DateTimeField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PENDING")
     total_price = models.DecimalField(max_digits=10, decimal_places=2)
