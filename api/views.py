@@ -1,4 +1,6 @@
-from rest_framework import viewsets, permissions, serializers
+from rest_framework import viewsets, permissions, serializers, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
 # Nossos Modelos
@@ -65,40 +67,30 @@ class PetViewSet(viewsets.ModelViewSet):
         """
         serializer.save(tutor=self.request.user)
 
-
 class AppointmentViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet para criar e gerenciar Agendamentos.
-    """
+    # --- Primeiro nível de recuo para atributos e métodos ---
     serializer_class = AppointmentSerializer
-    permission_classes = [IsAuthenticated] # Permissão base
+    permission_classes = [IsAuthenticated]
 
     def get_permissions(self):
-        """
-        Define permissões específicas para cada ação. Para ver detalhes,
-        editar ou apagar, usa a regra customizada.
-        """
-        if self.action in ['retrieve', 'update', 'partial_update', 'destroy']:
+        # --- Segundo nível de recuo para o código dentro de um método ---
+        if self.action in ['retrieve', 'update', 'partial_update', 'destroy', 'confirm', 'cancel']:
             self.permission_classes = [IsAuthenticated, IsAppointmentOwnerOrPetShopOwner]
         return super().get_permissions()
 
     def get_queryset(self):
-        """
-        Filtra os agendamentos baseado no tipo de usuário.
-        """
         user = self.request.user
         if user.is_superuser:
             return Appointment.objects.all()
         if user.user_type == 'TUTOR':
             return Appointment.objects.filter(tutor=user)
-        if user.user_type == 'PROPRIETARIO' and hasattr(user, 'petshop'):
-            return Appointment.objects.filter(pet_shop=user.petshop)
+        if user.user_type == 'PROPRIETARIO':
+            owned_petshops = PetShop.objects.filter(owner=user)
+            return Appointment.objects.filter(pet_shop__in=owned_petshops)
+        
         return Appointment.objects.none()
 
     def perform_create(self, serializer):
-        """
-        Lógica customizada ao CRIAR um agendamento.
-        """
         service = serializer.validated_data.get('service')
         user = self.request.user
 
@@ -117,3 +109,24 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
         else:
              raise serializers.ValidationError("Erro: Tipo de usuário inválido para criar um agendamento.")
+
+    @action(detail=True, methods=['post'])
+    def confirm(self, request, pk=None):
+        appointment = self.get_object()
+        if request.user.user_type != 'PROPRIETARIO':
+            return Response(
+                {'detail': 'Apenas proprietários podem confirmar agendamentos.'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        appointment.status = 'CONFIRMED'
+        appointment.save()
+        serializer = self.get_serializer(appointment)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
+        appointment = self.get_object()
+        appointment.status = 'CANCELLED'
+        appointment.save()
+        serializer = self.get_serializer(appointment)
+        return Response(serializer.data)
