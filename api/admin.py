@@ -1,25 +1,91 @@
+# api/admin.py
 from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from .models import User, PetShop, Pet, Service, Appointment, Review
 
-# Customização para o modelo PetShop no Admin
+# --- CUSTOMIZAÇÃO PARA USER ---
+@admin.register(User)
+class UserAdmin(BaseUserAdmin):
+    list_display = ('username', 'email', 'first_name', 'last_name', 'user_type', 'works_at', 'is_staff')
+    search_fields = ('username', 'email', 'first_name', 'last_name')
+    list_filter = ('user_type', 'works_at', 'is_staff', 'is_superuser', 'groups')
+    fieldsets = BaseUserAdmin.fieldsets + (
+        ('Informações Adicionais', {'fields': ('user_type', 'phone_number', 'birth_date', 'works_at')}),
+    )
+
+# --- CUSTOMIZAÇÃO PARA PETSHOP ---
 @admin.register(PetShop)
 class PetShopAdmin(admin.ModelAdmin):
-    # Campos que serão exibidos na lista de pet shops
     list_display = ('id', 'name', 'owner', 'phone_number')
-    
-    # Campos que terão um link para a página de edição
     list_display_links = ('id', 'name')
-    
-    # Adiciona uma barra de busca que procura por nome ou nome de usuário do dono
     search_fields = ('name', 'owner__username')
-    
-    # Adiciona um filtro na lateral para filtrar por proprietário
     list_filter = ('owner',)
+    fieldsets = (
+        ('Informações Principais', {
+            'fields': ('name', 'owner', 'description')
+        }),
+        ('Contato e Endereço', {
+            'fields': ('phone_number', 'address', ('latitude', 'longitude'))
+        }),
+        ('Horários de Funcionamento', {
+            'fields': ('opening_hours',),
+            'classes': ('collapse',)
+        }),
+    )
 
-# Registrando os outros modelos da forma simples (eles não precisam de customização por enquanto)
-# Note que PetShop não está aqui porque foi registrado com o @admin.register acima
-admin.site.register(User)
-admin.site.register(Pet)
-admin.site.register(Service)
-admin.site.register(Appointment)
-admin.site.register(Review)
+# --- CUSTOMIZAÇÃO PARA SERVICE ---
+@admin.register(Service)
+class ServiceAdmin(admin.ModelAdmin):
+    list_display = ('name', 'pet_shop', 'base_price', 'duration_minutes', 'is_active')
+    search_fields = ('name', 'description', 'pet_shop__name')
+    list_filter = ('pet_shop', 'is_active')
+    fieldsets = (
+        (None, {
+            'fields': ('pet_shop', 'name', 'description')
+        }),
+        ('Detalhes do Preço e Duração', {
+            'fields': ('base_price', 'duration_minutes')
+        }),
+        ('Status', {
+            'fields': ('is_active',)
+        }),
+    )
+
+# --- CUSTOMIZAÇÃO PARA PET ---
+@admin.register(Pet)
+class PetAdmin(admin.ModelAdmin):
+    list_display = ('name', 'tutor', 'get_tutor_phone', 'species', 'breed')
+    search_fields = ('name', 'tutor__username', 'tutor__email', 'breed')
+    list_filter = ('species', 'breed', 'tutor')
+
+    @admin.display(description='Telefone do Tutor')
+    def get_tutor_phone(self, obj):
+        if obj.tutor:
+            return obj.tutor.phone_number
+        return "N/A"
+
+# --- CUSTOMIZAÇÃO PARA APPOINTMENT ---
+@admin.register(Appointment)
+class AppointmentAdmin(admin.ModelAdmin):
+    list_display = ('id', 'pet', 'tutor', 'pet_shop', 'service', 'appointment_time', 'status')
+    search_fields = ('pet__name', 'tutor__username', 'pet_shop__name', 'service__name')
+    list_filter = ('status', 'pet_shop', 'tutor')
+    list_per_page = 20
+
+# --- NOVA CUSTOMIZAÇÃO PARA REVIEW ---
+@admin.register(Review)
+class ReviewAdmin(admin.ModelAdmin):
+    # Campos que serão exibidos na lista de avaliações
+    list_display = ('pet_shop', 'tutor', 'rating', 'created_at')
+    
+    # Adiciona filtros na lateral
+    list_filter = ('rating', 'pet_shop')
+    
+    # Adiciona uma barra de busca
+    search_fields = ('pet_shop__name', 'tutor__username', 'comment')
+    
+    # Define campos como somente leitura (não editáveis) na página de edição
+    readonly_fields = ('created_at',)
+
+# A lista de registro simples agora está vazia, pois TODOS os nossos modelos
+# principais foram registrados com a anotação @admin.register
