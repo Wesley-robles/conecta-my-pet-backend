@@ -82,6 +82,13 @@ class Service(models.Model):
     base_price = models.DecimalField(max_digits=10, decimal_places=2)
     duration_minutes = models.IntegerField(blank=True, null=True)
     is_active = models.BooleanField(default=True)
+    
+    # ESTE CAMPO PERTENCE AQUI
+    performers = models.ManyToManyField(
+        User,
+        related_name='performable_services',
+        blank=True
+    )
 
     def __str__(self):
         return f"{self.name} - {self.pet_shop.name}"
@@ -89,27 +96,46 @@ class Service(models.Model):
 #
 # Tabela 5: Appointments (Agendamentos)
 #
+# Em api/models.py
+
 class Appointment(models.Model):
+    # DEFINIÇÃO DA LISTA DE OPÇÕES PARA O STATUS
     STATUS_CHOICES = (
         ("PENDING", "Pendente"),
         ("CONFIRMED", "Confirmado"),
         ("CANCELLED", "Cancelado"),
         ("COMPLETED", "Concluído"),
     )
+
     tutor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='tutor_appointments')
     pet = models.ForeignKey(Pet, on_delete=models.CASCADE, related_name='appointments')
     pet_shop = models.ForeignKey(PetShop, on_delete=models.CASCADE, related_name='appointments')
     service = models.ForeignKey(Service, on_delete=models.SET_NULL, null=True)
     client_name = models.CharField(max_length=150, blank=True, null=True)
     client_phone = models.CharField(max_length=20, blank=True, null=True)
+    
+    employee = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='handled_appointments'
+    )
+
     appointment_time = models.DateTimeField()
+    end_time = models.DateTimeField(null=True, blank=True)
+    
+    # O campo status agora encontra a variável STATUS_CHOICES
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PENDING")
+    
     total_price = models.DecimalField(max_digits=10, decimal_places=2)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Agendamento de {self.pet.name} em {self.pet_shop.name} para {self.appointment_time.strftime('%d/%m/%Y %H:%M')}"
-
+        try:
+            pet_name = self.pet.name
+        except Pet.DoesNotExist:
+            pet_name = "[Pet Deletado]"
+        return f"Agendamento de {pet_name} em {self.pet_shop.name} para {self.appointment_time.strftime('%d/%m/%Y %H:%M')}"
 #
 # Tabela 6: Reviews (Avaliações)
 #

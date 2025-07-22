@@ -34,14 +34,20 @@ class PetShopAdmin(admin.ModelAdmin):
     )
 
 # --- CUSTOMIZAÇÃO PARA SERVICE ---
+# Em api/admin.py
+
 @admin.register(Service)
 class ServiceAdmin(admin.ModelAdmin):
     list_display = ('name', 'pet_shop', 'base_price', 'duration_minutes', 'is_active')
     search_fields = ('name', 'description', 'pet_shop__name')
     list_filter = ('pet_shop', 'is_active')
+    filter_horizontal = ('performers',)
+    
+    # A CORREÇÃO ESTÁ AQUI
     fieldsets = (
         (None, {
-            'fields': ('pet_shop', 'name', 'description')
+            # Adicionamos 'performers' a esta lista de campos
+            'fields': ('pet_shop', 'name', 'description', 'performers')
         }),
         ('Detalhes do Preço e Duração', {
             'fields': ('base_price', 'duration_minutes')

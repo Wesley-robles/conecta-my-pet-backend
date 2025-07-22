@@ -8,6 +8,7 @@ from .serializers import (
     PetShopSerializer, ServiceSerializer, PetSerializer, AppointmentSerializer
 )
 from .permissions import CanManagePetShop, IsAppointmentOwnerOrPetShopOwner
+from datetime import timedelta
 
 class PetShopViewSet(viewsets.ModelViewSet):
     queryset = PetShop.objects.all()
@@ -32,10 +33,13 @@ class PetViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(tutor=self.request.user)
 
+# Em api/views.py
+
 class AppointmentViewSet(viewsets.ModelViewSet):
+    # --- Início do Bloco da Classe ---
     serializer_class = AppointmentSerializer
     permission_classes = [IsAuthenticated]
-    
+
     def get_permissions(self):
         if self.action in ['retrieve', 'update', 'partial_update', 'destroy', 'confirm', 'cancel']:
             self.permission_classes = [IsAuthenticated, IsAppointmentOwnerOrPetShopOwner]
@@ -55,28 +59,51 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                 return Appointment.objects.filter(pet_shop=user.works_at)
         return Appointment.objects.none()
 
-    def perform_create(self, serializer):
-        user = self.request.user
-        service = serializer.validated_data.get('service')
-        target_petshop = serializer.validated_data.get('pet_shop')
-        if user.user_type == 'TUTOR':
-            pet = serializer.validated_data.get('pet')
-            if pet.tutor != user:
-                raise serializers.ValidationError("Erro: Você só pode agendar serviços para os seus próprios pets.")
-            serializer.save(tutor=user, total_price=service.base_price)
-        elif user.user_type in ['PROPRIETARIO', 'GERENTE', 'FUNCIONARIO']:
-            if service.pet_shop != target_petshop:
-                raise serializers.ValidationError("Erro: Este serviço não pertence ao pet shop selecionado.")
-            if user.user_type == 'PROPRIETARIO':
-                if target_petshop not in user.petshops.all():
-                    raise serializers.ValidationError("Erro: Você só pode agendar em um pet shop que você possui.")
-            else:
-                if target_petshop != user.works_at:
-                    raise serializers.ValidationError("Erro: Você só pode agendar no pet shop onde trabalha.")
-            serializer.save(total_price=service.base_price)
-        else:
-             raise serializers.ValidationError("Erro: Tipo de usuário inválido para criar um agendamento.")
+    # ESTE MÉTODO PRECISA ESTAR DENTRO DA CLASSE, COM ESTE RECUO
+   # Em api/views.py, dentro da classe AppointmentViewSet
 
+def perform_create(self, serializer):
+    user = self.request.user
+    service = serializer.validated_data.get('service')
+    employee = serializer.validated_data.get('employee') # O funcionário vem da requisição
+    appointment_time = serializer.validated_data.get('appointment_time')
+
+    # Validação 1: O funcionário escolhido realmente pode realizar este serviço?
+    if employee not in service.performers.all():
+        raise serializers.ValidationError(
+            f"O funcionário {employee.username} não está habilitado para realizar o serviço de {service.name}."
+        )
+
+    # Validação 2: Validação de conflito de horário PARA O FUNCIONÁRIO
+    duration = service.duration_minutes or 60
+    end_time = appointment_time + timedelta(minutes=duration)
+
+    conflicting_appointments = Appointment.objects.filter(
+        employee=employee, # A verificação agora é por funcionário
+        status__in=['CONFIRMED', 'PENDING'], # Verifica contra agendamentos pendentes ou confirmados
+        appointment_time__lt=end_time,
+        end_time__gt=appointment_time
+    )
+
+    if conflicting_appointments.exists():
+        raise serializers.ValidationError(
+            f"Conflito de horário. O funcionário {employee.username} já está ocupado neste período."
+        )
+
+    # A lógica de quem pode criar continua a mesma, mas o salvamento muda
+    if user.user_type == 'TUTOR':
+        pet = serializer.validated_data.get('pet')
+        if pet.tutor != user:
+            raise serializers.ValidationError("Erro: Você só pode agendar serviços para os seus próprios pets.")
+        serializer.save(tutor=user, total_price=service.base_price, end_time=end_time)
+    
+    elif user.user_type in ['PROPRIETARIO', 'GERENTE', 'FUNCIONARIO']:
+        # A validação de permissão da loja já foi feita na lógica acima
+        serializer.save(total_price=service.base_price, end_time=end_time)
+    
+    else:
+         raise serializers.ValidationError("Erro: Tipo de usuário inválido para criar um agendamento.")
+    
     @action(detail=True, methods=['post'])
     def confirm(self, request, pk=None):
         appointment = self.get_object()
@@ -107,3 +134,4 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         appointment.save()
         serializer = self.get_serializer(appointment)
         return Response(serializer.data)
+    # --- Fim do Bloco da Classe ---
