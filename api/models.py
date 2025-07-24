@@ -158,3 +158,30 @@ class Review(models.Model):
 
     def __str__(self):
         return f"Avaliação de {self.tutor.username} para {self.pet_shop.name} - Nota: {self.rating}"
+
+class TimeBlock(models.Model):
+    """
+    Representa um bloqueio de tempo na agenda de um funcionário
+    para um compromisso, feriado, etc.
+    """
+    employee = models.ForeignKey(
+        User, 
+        on_delete=models.CASCADE, 
+        related_name='time_blocks'
+    )
+    pet_shop = models.ForeignKey(
+        PetShop,
+        on_delete=models.CASCADE,
+        related_name='time_blocks'
+    )
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField()
+    reason = models.CharField(
+        max_length=255, 
+        blank=True, 
+        null=True, 
+        help_text="Motivo do bloqueio (ex: Consulta médica, Feriado)"
+    )
+
+    def __str__(self):
+        return f"Bloqueio para {self.employee.username} de {self.start_time.strftime('%H:%M')} a {self.end_time.strftime('%H:%M')}"

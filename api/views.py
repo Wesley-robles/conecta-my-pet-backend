@@ -5,6 +5,11 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
+from .models import User, PetShop, Service, Pet, Appointment, Review, TimeBlock
+from .serializers import (
+    PetShopSerializer, ServiceSerializer, PetSerializer, AppointmentSerializer, TimeBlockSerializer
+)
+
 
 from .models import User, PetShop, Service, Pet, Appointment
 from .serializers import (
@@ -17,6 +22,8 @@ class PetShopViewSet(viewsets.ModelViewSet):
     queryset = PetShop.objects.all()
     serializer_class = PetShopSerializer
     permission_classes = [IsAuthenticated]
+
+   # Em api/views.py, dentro da classe PetShopViewSet
 
     @action(detail=True, methods=['get'])
     def availability(self, request, pk=None):
@@ -40,10 +47,13 @@ class PetShopViewSet(viewsets.ModelViewSet):
         if not performers.exists():
             return Response([], status=status.HTTP_200_OK)
 
+        # Busca agendamentos E bloqueios existentes para estes funcionários neste dia
         existing_appointments = Appointment.objects.filter(
-            employee__in=performers,
-            appointment_time__date=day,
-            status__in=['CONFIRMED', 'PENDING']
+            employee__in=performers, appointment_time__date=day, status__in=['CONFIRMED', 'PENDING']
+        )
+        # --- NOVA LÓGICA ABAIXO ---
+        existing_blocks = TimeBlock.objects.filter(
+            employee__in=performers, start_time__date=day
         )
 
         total_duration = timedelta(minutes=(service.duration_minutes + service.buffer_time_minutes))
@@ -51,21 +61,17 @@ class PetShopViewSet(viewsets.ModelViewSet):
         available_slots = []
         
         slot_interval_minutes = 15
-        
         day_start_time = datetime.strptime("08:00", "%H:%M").time()
         day_end_time = datetime.strptime("20:00", "%H:%M").time()
 
         slot_time = datetime.combine(day, day_start_time)
         end_of_day = datetime.combine(day, day_end_time)
-        
-        # Tornamos o fim do dia "aware" para a comparação
         end_of_day_aware = timezone.make_aware(end_of_day)
 
         while slot_time < end_of_day:
             slot_start_aware = timezone.make_aware(slot_time)
             slot_end_aware = slot_start_aware + total_duration
 
-            # AQUI ESTÁ A CORREÇÃO: Comparamos dois objetos de data e hora completos e "aware"
             if slot_end_aware > end_of_day_aware:
                 break
 
@@ -90,11 +96,22 @@ class PetShopViewSet(viewsets.ModelViewSet):
                     performer_is_free = False
                     continue
 
+                # Verifica conflito com agendamentos
                 for appt in existing_appointments:
                     if appt.employee == performer:
                         if slot_start_aware < appt.end_time and slot_end_aware > appt.appointment_time:
                             performer_is_free = False
                             break
+                if not performer_is_free: continue
+
+                # --- NOVA LÓGICA ABAIXO ---
+                # Verifica conflito com bloqueios
+                for block in existing_blocks:
+                    if block.employee == performer:
+                        if slot_start_aware < block.end_time and slot_end_aware > block.start_time:
+                            performer_is_free = False
+                            break
+                if not performer_is_free: continue
                 
                 if performer_is_free:
                     is_slot_available = True
@@ -106,7 +123,6 @@ class PetShopViewSet(viewsets.ModelViewSet):
             slot_time += timedelta(minutes=slot_interval_minutes)
 
         return Response(available_slots)
-
 
 class ServiceViewSet(viewsets.ModelViewSet):
     serializer_class = ServiceSerializer
@@ -234,3 +250,57 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         appointment.save()
         serializer = self.get_serializer(appointment)
         return Response(serializer.data)
+    
+class TimeBlockViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet para gerir bloqueios de tempo na agenda.
+    Apenas Proprietários e Gerentes podem gerir bloqueios.
+    """
+    serializer_class = TimeBlockSerializer
+    # A permissão será customizada abaixo
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        """
+        Filtra os bloqueios para mostrar apenas os relevantes
+        para o usuário logado (baseado nas suas lojas).
+        """
+        user = self.request.user
+        if user.is_superuser:
+            return TimeBlock.objects.all()
+
+        petshops = []
+        if user.user_type == 'PROPRIETARIO':
+            petshops = user.petshops.all()
+        elif user.user_type in ['GERENTE', 'FUNCIONARIO']:
+            if user.works_at:
+                petshops = [user.works_at]
+
+        return TimeBlock.objects.filter(pet_shop__in=petshops)
+
+    def perform_create(self, serializer):
+        """
+        Valida se o usuário tem permissão para criar um bloqueio
+        para o funcionário e a loja selecionados.
+        """
+        user = self.request.user
+        employee = serializer.validated_data.get('employee')
+        pet_shop = serializer.validated_data.get('pet_shop')
+
+        # Regra: Apenas um Proprietário ou Gerente pode criar bloqueios
+        if user.user_type not in ['PROPRIETARIO', 'GERENTE']:
+            raise serializers.ValidationError("Apenas Proprietários ou Gerentes podem criar bloqueios de horário.")
+
+        # Regra: O funcionário a ser bloqueado deve pertencer à loja correta
+        if employee.works_at != pet_shop:
+             raise serializers.ValidationError("Este funcionário não trabalha no pet shop selecionado.")
+
+        # Regra: O criador do bloqueio deve gerir aquela loja
+        if user.user_type == 'PROPRIETARIO':
+            if pet_shop not in user.petshops.all():
+                raise serializers.ValidationError("Você só pode criar bloqueios para pet shops que você possui.")
+        elif user.user_type == 'GERENTE':
+            if pet_shop != user.works_at:
+                raise serializers.ValidationError("Você só pode criar bloqueios para o pet shop onde trabalha.")
+
+        serializer.save()

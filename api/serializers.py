@@ -1,6 +1,6 @@
 # api/serializers.py
 from rest_framework import serializers
-from .models import User, PetShop, Service, Pet, Appointment
+from .models import User, PetShop, Service, Pet, Appointment,Review, TimeBlock
 
 # Serializer simples para exibir informações básicas do usuário (funcionários)
 class UserSerializer(serializers.ModelSerializer):
@@ -52,3 +52,8 @@ class AppointmentSerializer(serializers.ModelSerializer):
             'end_time', 'status', 'total_price', 'created_at'
         ]
         read_only_fields = ['tutor', 'status', 'total_price', 'end_time']
+
+class TimeBlockSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TimeBlock
+        fields = '__all__'
