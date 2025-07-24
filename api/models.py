@@ -88,9 +88,11 @@ class Service(models.Model):
     description = models.TextField(blank=True, null=True)
     base_price = models.DecimalField(max_digits=10, decimal_places=2)
     duration_minutes = models.IntegerField(blank=True, null=True)
+    buffer_time_minutes = models.IntegerField(
+        default=0, 
+        help_text="Tempo em minutos reservado após o serviço para limpeza/preparação."
+    )
     is_active = models.BooleanField(default=True)
-    
-    # ESTE CAMPO PERTENCE AQUI
     performers = models.ManyToManyField(
         User,
         related_name='performable_services',

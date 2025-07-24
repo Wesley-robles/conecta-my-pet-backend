@@ -4,6 +4,7 @@ from rest_framework import viewsets, permissions, serializers, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from django.utils import timezone
 
 from .models import User, PetShop, Service, Pet, Appointment
 from .serializers import (
@@ -16,6 +17,95 @@ class PetShopViewSet(viewsets.ModelViewSet):
     queryset = PetShop.objects.all()
     serializer_class = PetShopSerializer
     permission_classes = [IsAuthenticated]
+
+    @action(detail=True, methods=['get'])
+    def availability(self, request, pk=None):
+        petshop = self.get_object()
+        date_str = request.query_params.get('date')
+        service_id = request.query_params.get('service_id')
+
+        if not date_str or not service_id:
+            return Response(
+                {'detail': 'A data (no formato AAAA-MM-DD) e o ID do serviço (service_id) são obrigatórios.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            day = datetime.strptime(date_str, '%Y-%m-%d').date()
+            service = Service.objects.get(pk=service_id, pet_shop=petshop)
+        except (ValueError, Service.DoesNotExist):
+            return Response({'detail': 'Data inválida ou serviço não encontrado neste pet shop.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        performers = service.performers.all()
+        if not performers.exists():
+            return Response([], status=status.HTTP_200_OK)
+
+        existing_appointments = Appointment.objects.filter(
+            employee__in=performers,
+            appointment_time__date=day,
+            status__in=['CONFIRMED', 'PENDING']
+        )
+
+        total_duration = timedelta(minutes=(service.duration_minutes + service.buffer_time_minutes))
+        day_of_week = day.strftime('%A').lower()
+        available_slots = []
+        
+        slot_interval_minutes = 15
+        
+        day_start_time = datetime.strptime("08:00", "%H:%M").time()
+        day_end_time = datetime.strptime("20:00", "%H:%M").time()
+
+        slot_time = datetime.combine(day, day_start_time)
+        end_of_day = datetime.combine(day, day_end_time)
+        
+        # Tornamos o fim do dia "aware" para a comparação
+        end_of_day_aware = timezone.make_aware(end_of_day)
+
+        while slot_time < end_of_day:
+            slot_start_aware = timezone.make_aware(slot_time)
+            slot_end_aware = slot_start_aware + total_duration
+
+            # AQUI ESTÁ A CORREÇÃO: Comparamos dois objetos de data e hora completos e "aware"
+            if slot_end_aware > end_of_day_aware:
+                break
+
+            is_slot_available = False
+            for performer in performers:
+                performer_is_free = True
+                
+                schedule = performer.work_schedule.get(day_of_week) if performer.work_schedule else None
+                if not schedule:
+                    performer_is_free = False
+                    continue
+
+                work_start = datetime.strptime(schedule['start'], '%H:%M').time()
+                break_start = datetime.strptime(schedule['break_start'], '%H:%M').time()
+                break_end = datetime.strptime(schedule['break_end'], '%H:%M').time()
+                work_end = datetime.strptime(schedule['end'], '%H:%M').time()
+
+                fits_in_morning = (slot_start_aware.time() >= work_start and slot_end_aware.time() <= break_start)
+                fits_in_afternoon = (slot_start_aware.time() >= break_end and slot_end_aware.time() <= work_end)
+
+                if not (fits_in_morning or fits_in_afternoon):
+                    performer_is_free = False
+                    continue
+
+                for appt in existing_appointments:
+                    if appt.employee == performer:
+                        if slot_start_aware < appt.end_time and slot_end_aware > appt.appointment_time:
+                            performer_is_free = False
+                            break
+                
+                if performer_is_free:
+                    is_slot_available = True
+                    break
+            
+            if is_slot_available:
+                available_slots.append(slot_time.strftime('%H:%M'))
+
+            slot_time += timedelta(minutes=slot_interval_minutes)
+
+        return Response(available_slots)
 
 
 class ServiceViewSet(viewsets.ModelViewSet):
@@ -68,9 +158,9 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         appointment_time = serializer.validated_data.get('appointment_time')
         target_petshop = serializer.validated_data.get('pet_shop')
 
-        # Lógica de Validação de Horário de Trabalho
+        # Lógica de Validação de Horário
         duration = service.duration_minutes or 60
-        end_time = appointment_time + timedelta(minutes=duration)
+        end_time = appointment_time + timedelta(minutes=(duration + service.buffer_time_minutes))
         if not employee.work_schedule:
             raise serializers.ValidationError(f"O funcionário {employee.username} não tem um horário de trabalho definido.")
         day_of_week = appointment_time.strftime('%A').lower()
@@ -83,10 +173,10 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         work_end = datetime.strptime(schedule_for_day['end'], '%H:%M').time()
         appointment_start_time = appointment_time.time()
         appointment_end_time = end_time.time()
-        is_within_morning_shift = (appointment_start_time >= work_start and appointment_end_time <= break_start)
-        is_within_afternoon_shift = (appointment_start_time >= break_end and appointment_end_time <= work_end)
-        if not (is_within_morning_shift or is_within_afternoon_shift):
-            raise serializers.ValidationError("O horário solicitado está fora do período de trabalho ou durante o intervalo do funcionário.")
+        fits_in_morning_shift = (appointment_start_time >= work_start and appointment_end_time <= break_start)
+        fits_in_afternoon_shift = (appointment_start_time >= break_end and appointment_end_time <= work_end)
+        if not (fits_in_morning_shift or fits_in_afternoon_shift):
+            raise serializers.ValidationError("O horário solicitado não se encaixa nos turnos de trabalho ou conflita com o intervalo.")
 
         # Lógica de Validação de Conflito
         conflicting_appointments = Appointment.objects.filter(
