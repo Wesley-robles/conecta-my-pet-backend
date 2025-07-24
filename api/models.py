@@ -1,13 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 
-#
-# Tabela 1: Users (Usuários)
-# Vamos estender o usuário padrão do Django para adicionar nossos campos.
-# Esta é a melhor prática para segurança e autenticação.
-#
 class User(AbstractUser):
-    
     USER_TYPE_CHOICES = (
       ("TUTOR", "Tutor"),
       ("PROPRIETARIO", "Proprietário"),
@@ -19,14 +13,27 @@ class User(AbstractUser):
     birth_date = models.DateField(blank=True, null=True)
     user_type = models.CharField(max_length=15, choices=USER_TYPE_CHOICES, default="TUTOR")
     
-    # Este novo campo irá conectar um Gerente ou Funcionário a UM pet shop específico
     works_at = models.ForeignKey(
-        'PetShop',  # Usamos aspas para evitar problemas de ordem de importação
+        'PetShop',
         on_delete=models.SET_NULL, 
         null=True, 
         blank=True, 
-        related_name='employees' # Podemos acessar os funcionários de uma loja com petshop.employees.all()
+        related_name='employees'
     )
+
+    # --- NOVO CAMPO ADICIONADO ---
+    work_schedule = models.JSONField(
+        blank=True, 
+        null=True, 
+        help_text="""
+        Ex: 
+        {
+            "monday": {"start": "08:00", "break_start": "12:00", "break_end": "13:00", "end": "17:00"},
+            "tuesday": {"start": "09:00", "break_start": "12:30", "break_end": "13:30", "end": "18:00"}
+        }
+        """
+    )
+    # --- FIM DO NOVO CAMPO ---
 
     def __str__(self):
         return self.username

@@ -12,6 +12,11 @@ class UserAdmin(BaseUserAdmin):
     fieldsets = BaseUserAdmin.fieldsets + (
         ('Informações Adicionais', {'fields': ('user_type', 'phone_number', 'birth_date', 'works_at')}),
     )
+    fieldsets = BaseUserAdmin.fieldsets + (
+        ('Informações Adicionais', {
+            'fields': ('user_type', 'phone_number', 'birth_date', 'works_at', 'work_schedule')
+        }),
+    )
 
 # --- CUSTOMIZAÇÃO PARA PETSHOP ---
 @admin.register(PetShop)
