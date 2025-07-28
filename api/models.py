@@ -107,8 +107,10 @@ class Service(models.Model):
 #
 # Em api/models.py
 
+# Em api/models.py
+
 class Appointment(models.Model):
-    # DEFINIÇÃO DA LISTA DE OPÇÕES PARA O STATUS
+    # --- Definições de Choices ---
     STATUS_CHOICES = (
         ("PENDING", "Pendente"),
         ("CONFIRMED", "Confirmado"),
@@ -116,28 +118,50 @@ class Appointment(models.Model):
         ("COMPLETED", "Concluído"),
     )
 
+    # NOVO: Opções de Frequência para Recorrência
+    FREQUENCY_CHOICES = (
+        ("WEEKLY", "Semanal"),
+        ("BIWEEKLY", "Quinzenal"), # Quinzenal = A cada duas semanas
+        ("MONTHLY", "Mensal"),
+    )
+
+    # --- Campos do Modelo ---
     tutor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='tutor_appointments')
     pet = models.ForeignKey(Pet, on_delete=models.CASCADE, related_name='appointments')
     pet_shop = models.ForeignKey(PetShop, on_delete=models.CASCADE, related_name='appointments')
     service = models.ForeignKey(Service, on_delete=models.SET_NULL, null=True)
     client_name = models.CharField(max_length=150, blank=True, null=True)
     client_phone = models.CharField(max_length=20, blank=True, null=True)
-    
-    employee = models.ForeignKey(
-        User,
-        on_delete=models.SET_NULL,
-        null=True,
-        related_name='handled_appointments'
-    )
-
+    employee = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='handled_appointments')
     appointment_time = models.DateTimeField()
     end_time = models.DateTimeField(null=True, blank=True)
-    
-    # O campo status agora encontra a variável STATUS_CHOICES
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PENDING")
-    
     total_price = models.DecimalField(max_digits=10, decimal_places=2)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    # --- NOVOS CAMPOS PARA RECORRÊNCIA ---
+    # Estes campos servem apenas para guardar a "regra" no agendamento pai.
+    frequency = models.CharField(
+        max_length=10, 
+        choices=FREQUENCY_CHOICES, 
+        blank=True, 
+        null=True,
+        help_text="Frequência da recorrência (WEEKLY, BIWEEKLY, MONTHLY)"
+    )
+    recurrence_end_date = models.DateField(
+        blank=True, 
+        null=True,
+        help_text="Data final para a criação de agendamentos recorrentes"
+    )
+    # Este campo liga todos os "filhos" ao primeiro agendamento da série.
+    recurrence_parent = models.ForeignKey(
+        'self',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='recurrences'
+    )
+    # --- FIM DOS NOVOS CAMPOS ---
 
     def __str__(self):
         try:
